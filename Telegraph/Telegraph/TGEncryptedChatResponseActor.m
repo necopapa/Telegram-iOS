@@ -37,19 +37,48 @@
     _accessHash = [options[@"accessHash"] longLongValue];
     
     _currentConfig = [TGRequestEncryptedChatActor cachedEncryptionConfig];
-    self.cancelToken = [TGTelegraphInstance doRequestEncryptionConfig:(TGRequestEncryptedChatActor *)self version:_currentConfig.version];
+#ifdef DEBUG
+    self.cancelToken = [TGTelegraphInstance doRequestEncryptionConfig:(TGRequestEncryptedChatActor *)self version:0];
+#else
+    self.cancelToken = [TGTelegraphInstance doRequestEncryptionConfig:self version:_currentConfig.version];
+#endif
 }
 
 - (void)dhRequestSuccess:(TLmessages_DhConfig *)config
 {
     if ([config isKindOfClass:[TLmessages_DhConfig$messages_dhConfig class]])
     {
+        TLmessages_DhConfig$messages_dhConfig *concreteConfig = (TLmessages_DhConfig$messages_dhConfig *)config;
+        
+        if (!TGCheckIsSafeG(concreteConfig.g))
+        {
+            [ActionStageInstance() actionFailed:self.path reason:-1];
+            return;
+        }
+        
+        if (!TGCheckMod(concreteConfig.p, concreteConfig.g))
+        {
+            [ActionStageInstance() actionFailed:self.path reason:-1];
+            return;
+        }
+        
+        if (!TGCheckIsSafePrime(concreteConfig.p))
+        {
+            [ActionStageInstance() actionFailed:self.path reason:-1];
+            return;
+        }
+        
         _currentConfig = (TLmessages_DhConfig$messages_dhConfig *)config;
         [TGRequestEncryptedChatActor setCachedEncryptionConfig:_currentConfig];
     }
     
     NSData *gABytes = [TGDatabaseInstance() conversationCustomPropertySync:[TGDatabaseInstance() peerIdForEncryptedConversationId:_encryptedConversationId] name:murMurHash32(@"a")];
-    NSData *nonce = [TGDatabaseInstance() conversationCustomPropertySync:[TGDatabaseInstance() peerIdForEncryptedConversationId:_encryptedConversationId] name:murMurHash32(@"nonce")];
+    
+    if (!TGCheckIsSafeGAOrB(gABytes, _currentConfig.p))
+    {
+        [ActionStageInstance() actionFailed:self.path reason:-1];
+        return;
+    }
     
     uint8_t bBytes[256];
     SecRandomCopyBytes(kSecRandomDefault, 256, bBytes);
@@ -77,11 +106,6 @@
         uint8_t zero = 0;
         [_key replaceBytesInRange:NSMakeRange(0, 0) withBytes:&zero length:1];
         TGLog(@"(adding key padding)");
-    }
-    
-    for (int i = 0; i < (int)_key.length && i < (int)nonce.length; i++)
-    {
-        ((uint8_t *)_key.mutableBytes)[i] ^= ((uint8_t *)nonce.bytes)[i];
     }
     
     NSData *keyHash = computeSHA1(_key);

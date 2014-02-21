@@ -35,13 +35,37 @@
     _uid = [options[@"uid"] intValue];
     
     _currentConfig = [TGRequestEncryptedChatActor cachedEncryptionConfig];
+#ifdef DEBUG
+    self.cancelToken = [TGTelegraphInstance doRequestEncryptionConfig:self version:0];
+#else
     self.cancelToken = [TGTelegraphInstance doRequestEncryptionConfig:self version:_currentConfig.version];
+#endif
 }
 
 - (void)dhRequestSuccess:(TLmessages_DhConfig *)config
 {
     if ([config isKindOfClass:[TLmessages_DhConfig$messages_dhConfig class]])
     {
+        TLmessages_DhConfig$messages_dhConfig *concreteConfig = (TLmessages_DhConfig$messages_dhConfig *)config;
+        
+        if (!TGCheckIsSafeG(concreteConfig.g))
+        {
+            [ActionStageInstance() actionFailed:self.path reason:-1];
+            return;
+        }
+        
+        if (!TGCheckMod(concreteConfig.p, concreteConfig.g))
+        {
+            [ActionStageInstance() actionFailed:self.path reason:-1];
+            return;
+        }
+        
+        if (!TGCheckIsSafePrime(concreteConfig.p))
+        {
+            [ActionStageInstance() actionFailed:self.path reason:-1];
+            return;
+        }
+        
         _currentConfig = (TLmessages_DhConfig$messages_dhConfig *)config;
         [TGRequestEncryptedChatActor setCachedEncryptionConfig:_currentConfig];
     }
@@ -62,6 +86,12 @@
     NSData *g = [[NSData alloc] initWithBytes:&tmpG length:4];
     
     NSData *g_a = computeExp(g, _aBytes, _currentConfig.p);
+    
+    if (!TGCheckIsSafeGAOrB(g_a, _currentConfig.p))
+    {
+        [ActionStageInstance() actionFailed:self.path reason:-1];
+        return;
+    }
     
     int64_t randomId = 0;
     arc4random_buf(&randomId, 8);
