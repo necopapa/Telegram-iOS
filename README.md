@@ -1,4 +1,11 @@
-Telegram
-========
+## Telegram messenger for iOS
 
-This is a Github repo for [Telegram](http://www.telegram.org)'s iOS code because I couldn't find on that was already on Github with the latest files and only a ZIP file was linked on their website.
+[Telegram](http://telegram.org) is a messaging app with a focus on speed and security. It’s superfast, simple and free.
+
+This repo contains **UNOFFICIAL** [Telegram App for iOS](https://itunes.apple.com/us/app/telegram-messenger/id686449807?ls=1&mt=8) source code.
+
+### API, Protocol documentation
+
+Documentation for Telegram API is available here: http://core.telegram.org/api
+
+Documentation for MTproto protocol is available here: http://core.telegram.org/mtproto
