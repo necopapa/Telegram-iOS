@@ -4,15 +4,15 @@
 <dict>
 	<key>SchemeUserState</key>
 	<dict>
-		<key>TelegraphKit.xcscheme</key>
+		<key>Telegraph.xcscheme</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>0</integer>
+			<integer>1</integer>
 		</dict>
 	</dict>
 	<key>SuppressBuildableAutocreation</key>
 	<dict>
-		<key>D07041EA15891C72008AA657</key>
+		<key>D08805AB156E8F3600311537</key>
 		<dict>
 			<key>primary</key>
 			<true/>
