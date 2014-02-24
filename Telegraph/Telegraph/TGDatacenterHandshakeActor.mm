@@ -352,17 +352,21 @@ static NSDictionary *selectPublicKey(NSArray *fingerprints)
                     [dataWithHash appendData:innerDataBytes];
                     while (dataWithHash.length < 255)
                     {
-                        uint8_t zero = 0;
-                        [dataWithHash appendBytes:&zero length:1];
+                        uint8_t random = 0;
+                        arc4random_buf(&random, 1);
+                        [dataWithHash appendBytes:&random length:1];
                     }
                     
                     NSData *encryptedData = encryptWithRSA([publicKey objectForKey:@"key"], dataWithHash);
                     if (encryptedData.length < 256)
                     {
                         NSMutableData *newEncryptedData = [[NSMutableData alloc] init];
-                        uint8_t zero = 0;
                         for (int i = 0; i < 256 - (int)encryptedData.length; i++)
-                            [newEncryptedData appendBytes:&zero length:1];
+                        {
+                            uint8_t random = 0;
+                            arc4random_buf(&random, 1);
+                            [newEncryptedData appendBytes:&random length:1];
+                        }
                         [newEncryptedData appendData:encryptedData];
                         encryptedData = newEncryptedData;
                     }
@@ -472,6 +476,34 @@ static NSDictionary *selectPublicKey(NSArray *fingerprints)
             if (![authServerNonce isEqualToData:dhInnerData.server_nonce])
             {
                 TGLog(@"***** Invalid DH server nonce");
+                [self beginHandshake:false];
+                return;
+            }
+            
+            if (!TGCheckIsSafeG(dhInnerData.g))
+            {
+                TGLog(@"***** Invalid DH g");
+                [self beginHandshake:false];
+                return;
+            }
+            
+            if (!TGCheckIsSafeGAOrB(dhInnerData.g_a, dhInnerData.dh_prime))
+            {
+                TGLog(@"***** Invalid DH g_a");
+                [self beginHandshake:false];
+                return;
+            }
+            
+            if (!TGCheckMod(dhInnerData.dh_prime, dhInnerData.g))
+            {
+                TGLog(@"***** Invalid DH g (2)");
+                [self beginHandshake:false];
+                return;
+            }
+            
+            if (!TGCheckIsSafePrime(dhInnerData.dh_prime))
+            {
+                TGLog(@"***** Invalid DH prime");
                 [self beginHandshake:false];
                 return;
             }

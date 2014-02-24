@@ -210,6 +210,9 @@ public:
     std::map<int, std::set<int64_t> > _quickAckIdToRequestIds;
     
     std::map<int64_t, std::vector<int64_t> > _containerIdToMessageIds;
+    
+    bool _shouldSynchronizeTime;
+    std::set<int64_t> _synchronizeTimeRequestIds;
 }
 
 @property (nonatomic) bool isReady;
@@ -433,7 +436,7 @@ static void TGNetworkReachabilityReleaseCallback(__unused const void *info)
         
         SCNetworkReachabilityContext context = {0, (__bridge void *)callback, TGNetworkReachabilityRetainCallback, TGNetworkReachabilityReleaseCallback, NULL};
         SCNetworkReachabilitySetCallback(self.networkReachability, TGNetworkReachabilityCallback, &context);
-        SCNetworkReachabilityScheduleWithRunLoop(self.networkReachability, CFRunLoopGetMain(), (CFStringRef)NSRunLoopCommonModes);
+        SCNetworkReachabilityScheduleWithRunLoop(self.networkReachability, CFRunLoopGetMain(), (__bridge CFStringRef)NSRunLoopCommonModes);
         
         SCNetworkReachabilityFlags flags;
         SCNetworkReachabilityGetFlags(self.networkReachability, &flags);
@@ -467,7 +470,7 @@ static void TGNetworkReachabilityReleaseCallback(__unused const void *info)
 {
     if (_networkReachability)
     {
-        SCNetworkReachabilityUnscheduleFromRunLoop(_networkReachability, CFRunLoopGetMain(), (CFStringRef)NSRunLoopCommonModes);
+        SCNetworkReachabilityUnscheduleFromRunLoop(_networkReachability, CFRunLoopGetMain(), (__bridge CFStringRef)NSRunLoopCommonModes);
         CFRelease(_networkReachability);
         _networkReachability = NULL;
     }
@@ -819,17 +822,17 @@ static void TGNetworkReachabilityReleaseCallback(__unused const void *info)
             {
                 TGDatacenterContext *datacenter1 = [[TGDatacenterContext alloc] init];
                 datacenter1.datacenterId = 1;
-                datacenter1.addressSet = [[NSArray alloc] initWithObjects:[[NSDictionary alloc] initWithObjectsAndKeys:@"173.240.5.253", @"address", [[NSNumber alloc] initWithInt:1488], @"port", nil], nil];
+                datacenter1.addressSet = [[NSArray alloc] initWithObjects:[[NSDictionary alloc] initWithObjectsAndKeys:@"173.240.5.253", @"address", [[NSNumber alloc] initWithInt:443], @"port", nil], nil];
                 _datacenters[datacenter1.datacenterId] = datacenter1;
                 
                 TGDatacenterContext *datacenter2 = [[TGDatacenterContext alloc] init];
                 datacenter2.datacenterId = 2;
-                datacenter2.addressSet = [[NSArray alloc] initWithObjects:[[NSDictionary alloc] initWithObjectsAndKeys:@"95.142.192.65", @"address", [[NSNumber alloc] initWithInt:1488], @"port", nil], nil];
+                datacenter2.addressSet = [[NSArray alloc] initWithObjects:[[NSDictionary alloc] initWithObjectsAndKeys:@"95.142.192.65", @"address", [[NSNumber alloc] initWithInt:443], @"port", nil], nil];
                 _datacenters[datacenter2.datacenterId] = datacenter2;
                 
                 TGDatacenterContext *datacenter3 = [[TGDatacenterContext alloc] init];
                 datacenter3.datacenterId = 3;
-                datacenter3.addressSet = [[NSArray alloc] initWithObjects:[[NSDictionary alloc] initWithObjectsAndKeys:@"174.140.142.5", @"address", [[NSNumber alloc] initWithInt:1488], @"port", nil], nil];
+                datacenter3.addressSet = [[NSArray alloc] initWithObjects:[[NSDictionary alloc] initWithObjectsAndKeys:@"174.140.142.5", @"address", [[NSNumber alloc] initWithInt:443], @"port", nil], nil];
                 _datacenters[datacenter3.datacenterId] = datacenter3;
             }
         }
@@ -1559,6 +1562,11 @@ static bool isKindOneOfClasses(id object, NSArray *classList)
         return;
 #endif
     
+    if (_shouldSynchronizeTime)
+    {
+        return;
+    }
+    
     std::map<int, int> datacenterActiveTransportTokens;
     std::set<int> datacenterTransportsToResume;
     
@@ -2222,6 +2230,11 @@ static bool isKindOneOfClasses(id object, NSArray *classList)
 
 - (NSData *)createTransportData:(NSArray *)messages sessionId:(int64_t)sessionId quickAckId:(int *)quickAckId transport:(id<TGTransport>)transport
 {
+    return [self createTransportData:messages sessionId:sessionId quickAckId:quickAckId transport:transport recordSyncTimeMessageIds:false];
+}
+
+- (NSData *)createTransportData:(NSArray *)messages sessionId:(int64_t)sessionId quickAckId:(int *)quickAckId transport:(id<TGTransport>)transport recordSyncTimeMessageIds:(bool)recordSyncTimeMessageId
+{
     TGDatacenterContext *datacenter = [transport datacenter];
     if (datacenter.authKey == nil)
         return nil;
@@ -2259,6 +2272,10 @@ static bool isKindOneOfClasses(id object, NSArray *classList)
             messageContainer.messages = [NSArray arrayWithObject:message];
             
             messageId = [self generateMessageId];
+            
+            if (recordSyncTimeMessageId)
+                _synchronizeTimeRequestIds.insert(messageId);
+            
             messageBody = messageContainer;
             messageSeqNo = [self generateMessageSeqNo:sessionId incerement:false];
             
@@ -2270,6 +2287,10 @@ static bool isKindOneOfClasses(id object, NSArray *classList)
         else
         {
             messageId = message.msg_id;
+            
+            if (recordSyncTimeMessageId)
+                _synchronizeTimeRequestIds.insert(messageId);
+            
             messageBody = (id<TLObject>)message.body;
             messageSeqNo = message.seqno;
         }
@@ -2375,6 +2396,11 @@ static bool isKindOneOfClasses(id object, NSArray *classList)
 
 - (void)sendMessagesToTransport:(NSArray *)messagesToSend transport:(id<TGTransport>)transport sessionId:(int64_t)sessionId reportAck:(bool)reportAck requestShortTimeout:(bool)requestShortTimeout
 {
+    [self sendMessagesToTransport:messagesToSend transport:transport sessionId:sessionId reportAck:reportAck requestShortTimeout:requestShortTimeout recordSyncTimeMessageIds:false];
+}
+
+- (void)sendMessagesToTransport:(NSArray *)messagesToSend transport:(id<TGTransport>)transport sessionId:(int64_t)sessionId reportAck:(bool)reportAck requestShortTimeout:(bool)requestShortTimeout recordSyncTimeMessageIds:(bool)recordSyncTimeMessageIds
+{
     if (messagesToSend.count == 0)
         return;
     
@@ -2404,7 +2430,7 @@ static bool isKindOneOfClasses(id object, NSArray *classList)
             if (currentSize >= 3 * 1024)
             {
                 int quickAckId = 0;
-                NSData *transportData = [self createTransportData:currentMessages sessionId:sessionId quickAckId:&quickAckId transport:transport];
+                NSData *transportData = [self createTransportData:currentMessages sessionId:sessionId quickAckId:&quickAckId transport:transport recordSyncTimeMessageIds:recordSyncTimeMessageIds];
                 
                 if (transportData != nil)
                 {
@@ -2437,7 +2463,7 @@ static bool isKindOneOfClasses(id object, NSArray *classList)
     if (leftMessages.count != 0)
     {
         int quickAckId = 0;
-        NSData *transportData = [self createTransportData:leftMessages sessionId:sessionId quickAckId:&quickAckId transport:transport];
+        NSData *transportData = [self createTransportData:leftMessages sessionId:sessionId quickAckId:&quickAckId transport:transport recordSyncTimeMessageIds:recordSyncTimeMessageIds];
         
         if (transportData != nil)
         {
@@ -2748,6 +2774,48 @@ static inline bool messageNeedsConfirmation(int32_t seqNo)
     }];
 }
 
+- (bool)findSynchronizeTimePongOrError:(id<TLObject>)object
+{
+    if ([object isKindOfClass:[TLPong class]])
+    {
+        if (_synchronizeTimeRequestIds.find(((TLPong *)object).msg_id) != _synchronizeTimeRequestIds.end())
+            return true;
+    }
+    else if ([object isKindOfClass:[TLBadMsgNotification class]])
+    {
+        if (_synchronizeTimeRequestIds.find(((TLBadMsgNotification *)object).bad_msg_id) != _synchronizeTimeRequestIds.end())
+            return true;
+    }
+    else if ([object isKindOfClass:[TLProtoMessage class]])
+    {
+        return [self findSynchronizeTimePongOrError:((TLProtoMessage *)object).body];
+    }
+    else if ([object isKindOfClass:[TLMessageContainer class]])
+    {
+        for (id<TLObject> subobject in ((TLMessageContainer *)object).messages)
+        {
+            bool result = [self findSynchronizeTimePongOrError:subobject];
+            if (result)
+                return true;
+        }
+    }
+    
+    return false;
+}
+
+- (void)dropSessionsForDatacenter:(TGDatacenterContext *)datacenter
+{
+    [self recreateSession:datacenter.authSessionId datacenter:datacenter];
+    [self recreateSession:datacenter.authDownloadSessionId datacenter:datacenter];
+    [self recreateSession:datacenter.authUploadSessionId datacenter:datacenter];
+    
+    [datacenter.datacenterTransport forceTransportReconnection];
+    [datacenter.datacenterUploadTransport forceTransportReconnection];
+    
+    [self.downloadFreeWorkers removeAllObjects];
+    [self.downloadFreeWorkers removeAllObjects];
+}
+
 - (void)transport:(id<TGTransport>)transport receivedData:(NSData *)data
 {
     [ActionStageInstance() dispatchOnStageQueue:^
@@ -2778,10 +2846,42 @@ static inline bool messageNeedsConfirmation(int32_t seqNo)
                 return;
             }
             
+            if (data.length < 24)
+            {
+                [is close];
+                [self dropSessionsForDatacenter:datacenter];
+                
+                return;
+            }
+            
             NSData *messageKey = [is readData:16];
+            if (messageKey.length != 16)
+            {
+                [is close];
+                [self dropSessionsForDatacenter:datacenter];
+                
+                return;
+            }
+            
             MessageKeyData keyData = [self generateMessageKeyData:messageKey incoming:true datacenter:datacenter];
+            if (keyData.aesIv.length != 32 || keyData.aesKey.length != 32)
+            {
+                [is close];
+                [self dropSessionsForDatacenter:datacenter];
+                
+                return;
+            }
             
             NSMutableData *messageData = [is readMutableData:(data.length - 24)];
+            
+            if (messageData.length % 16 != 0)
+            {
+                [is close];
+                [self dropSessionsForDatacenter:datacenter];
+                
+                return;
+            }
+            
             encryptWithAESInplace(messageData, keyData.aesKey, keyData.aesIv, false);
             
             NSInputStream *messageIs = [NSInputStream inputStreamWithData:messageData];
@@ -2822,7 +2922,7 @@ static inline bool messageNeedsConfirmation(int32_t seqNo)
                 doNotProcess = true;
             }
             
-            NSData *realMessageKeyFull = computeSHA1ForSubdata(messageData, 0, MIN(messageLength + 4 + 4 + 8 + 8 + 8, (int)messageData.length));
+            NSData *realMessageKeyFull = computeSHA1ForSubdata(messageData, 0, MIN(messageLength + 32, (int)messageData.length));
             NSData *realMessageKey = [[NSData alloc] initWithBytes:(((uint8_t *)realMessageKeyFull.bytes) + realMessageKeyFull.length - 16) length:16];
             
             if (![realMessageKey isEqual:messageKey])
@@ -2849,6 +2949,62 @@ static inline bool messageNeedsConfirmation(int32_t seqNo)
                 int32_t signature = [messageIs readInt32];
                 id<TLObject> message = TLMetaClassStore::constructObject(messageIs, signature, self, nil, &error);
                 [messageIs close];
+                
+                bool rejectMessageAnyway = false;
+                
+                int64_t currentLocalTime = (int64_t)(([[NSDate date] timeIntervalSince1970] + _timeDifference) * 4294967296);
+                
+                if (_shouldSynchronizeTime)
+                {
+                    if ([self findSynchronizeTimePongOrError:message])
+                    {
+                        NSTimeInterval serverTime = messageId / 4294967296.0;
+                        self.timeDifference = serverTime - (CFAbsoluteTimeGetCurrent() + kCFAbsoluteTimeIntervalSince1970) - _currentPingTime / 2.0;
+                        
+                        TGLog(@"!!!!! Synchronized time to %d", self.timeDifference);
+                        
+                        _shouldSynchronizeTime = false;
+                    }
+                    else
+                    {
+                        [self dropSessionsForDatacenter:datacenter];
+                        return;
+                    }
+                }
+                else
+                {
+#if TARGET_IPHONE_SIMULATOR
+                    
+                    if (ABS(arc4random_uniform(10)) < 2)
+                    {
+                        __block bool debugAnyway = false;
+                        static dispatch_once_t onceToken;
+                        dispatch_once(&onceToken, ^
+                        {
+                            debugAnyway = true;
+                        });
+                        rejectMessageAnyway = debugAnyway;
+                    }
+#endif
+                }
+                
+                if (rejectMessageAnyway || messageId < currentLocalTime - (300 * 4294967296L) || messageId > currentLocalTime + (30 * 4294967296L))
+                {
+                    _shouldSynchronizeTime = true;
+                    [self dropSessionsForDatacenter:datacenter];
+                    
+                    TLRPCping_delay_disconnect$ping_delay_disconnect *ping = [[TLRPCping_delay_disconnect$ping_delay_disconnect alloc] init];
+                    ping.disconnect_delay = TG_DISCONNECT_DELAY;
+                    ping.ping_id = arc4random();
+                    _synchronizeTimeRequestIds.insert(ping.ping_id);
+                    
+                    TGNetworkMessage *networkMessage = [[TGNetworkMessage alloc] init];
+                    networkMessage.protoMessage = [self wrapMessage:ping sessionId:datacenter.authSessionId meaningful:false];
+
+                    [self sendMessagesToTransport:@[networkMessage] transport:datacenter.activeDatacenterTransport sessionId:datacenter.authSessionId reportAck:false requestShortTimeout:true recordSyncTimeMessageIds:true];
+                    
+                    return;
+                }
                 
                 if (error != nil)
                 {

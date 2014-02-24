@@ -507,7 +507,6 @@ static bool _initialUpdatesScheduled = false;
                     conversation.encryptedData.handshakeState = 2;
                     
                     [TGDatabaseInstance() setConversationCustomProperty:conversation.conversationId name:murMurHash32(@"a") value:concreteChat.g_a];
-                    [TGDatabaseInstance() setConversationCustomProperty:conversation.conversationId name:murMurHash32(@"nonce") value:concreteChat.nonce];
                     
                     acceptEncryptedChats.insert(concreteChat.n_id);
                 }

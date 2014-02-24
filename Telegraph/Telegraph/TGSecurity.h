@@ -31,6 +31,11 @@ void encryptWithAESInplace(NSMutableData *data, NSData *key, NSData *iv, bool en
 void encryptWithAESInplaceAndModifyIv(NSMutableData *data, NSData *key, NSMutableData *iv, bool encrypt);
 NSData *computeExp(NSData *base, NSData *exp, NSData *modulus);
 
+bool TGCheckIsSafeG(unsigned int g);
+bool TGCheckIsSafePrime(NSData *numberBytes);
+bool TGCheckIsSafeGAOrB(NSData *gAOrB, NSData *p);
+bool TGCheckMod(NSData *numberBytes, unsigned int g);
+
 #ifdef __cplusplus
 }
 #endif
