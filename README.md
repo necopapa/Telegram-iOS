@@ -2,7 +2,7 @@
 
 [Telegram](http://telegram.org) is a messaging app with a focus on speed and security. It’s superfast, simple and free.
 
-This repo contains **UNOFFICIAL** [Telegram App for iOS](https://itunes.apple.com/us/app/telegram-messenger/id686449807?ls=1&mt=8) source code.
+This repo contains official code but the repo **IS NOT RUN BY TELEGRAM DEVELOPERS** [Telegram App for iOS](https://itunes.apple.com/us/app/telegram-messenger/id686449807?ls=1&mt=8) source code.
 
 ### API, Protocol documentation
 
